@@ -1,4 +1,4 @@
-
+import matplotlib.pyplot as plt
 from datetime import datetime
 import numpy as np
 # from scipy.linalg import  expm
@@ -25,9 +25,9 @@ sigma1 = np.array([[0, 1], [1, 0]],dtype=complex)
 
 N1 = 30
 N2 =  30
-Q=30
+Q=60
 dt=1/(3*Q)
-g=0.1
+g=1
 tInitStart=datetime.now()
 #spatial part of H10
 S10=np.zeros((N1*N2,N1*N2),dtype=complex)
@@ -128,7 +128,6 @@ b=selectedRow[1]
 k2=2*np.pi*b/N2
 #
 vecLeft=np.array(selectedRow[3:])
-print(len(vecLeft))
 
 psiInit=np.zeros((N1*N2*2,) ,dtype=complex)
 
@@ -137,7 +136,7 @@ mu=0.5
 for n1 in range(0,N1):
     for n2 in range(0,N2):
         vecTmp=np.zeros((N1*N2,),dtype=complex)
-        vecTmp[n1*N2+n2]=1
+        vecTmp[n1*N2+n2]=1/np.cosh((n2-N2/2)*mu)
         vecRightTmp=[vecLeft[2*n1],vecLeft[2*n1+1]]
         psiInit+=1/np.sqrt(N2)*np.exp(1j*k2*n2)*np.kron(vecTmp,vecRightTmp)
 
@@ -265,14 +264,24 @@ def generateWavefunctions(initVec):
 #         vec3Tmp=psiAll[q]
 #         U3q=expm(-1j*1/3*dt*(H30Sparse+g*diags(np.abs(vec3Tmp)**2)))
 #         return [q,U3q]
+initMat=vec2Mat(psiInit)
+im=plt.imshow(initMat,cmap=plt.cm.RdBu,interpolation="bilinear")
+plt.colorbar(im)
+plt.xlabel("$n_{2}$")
+plt.ylabel("$n_{1}$")
+plt.savefig("initmat.png")
+plt.close()
 lTmp=len(psiInit)
 UqTensor=torch.zeros((3*Q,lTmp,lTmp),dtype=torch.cfloat)
+UqTensorCuda = UqTensor.cuda()
 psiNext=psiInit
 ##############begin iteration
-eps=1e-10
+eps=1e-5
 maxIt=50
+innerProds=[]
 tIterStart=datetime.now()
 for i in range(0,maxIt):
+    tOneRoundStart=datetime.now()
     psiAll = generateWavefunctions(psiNext)
 
 
@@ -303,21 +312,41 @@ for i in range(0,maxIt):
         UqTensor[q,:,:]=torch.from_numpy(U)
 
     retUn = torch.eye(lTmp, dtype=torch.cfloat).cuda()
-    UqTensorCuda = UqTensor.cuda()
+    for q in range(0,3*Q):
+        UqTensorCuda[q,:,:]=UqTensor[q,:,:]
+
     for q in range(0,3*Q):
         retUn=UqTensorCuda[q,:,:]@retUn
 
     UNP=retUn.cpu().detach().numpy()
     eigVals, vecs = np.linalg.eig(UNP)
-    prodsAll = [np.abs(np.vdot(vec, psiInit)) for vec in vecs]
-    inds = np.argsort(prodsAll)
+    # vecsArray=[vecs[:,i] for i in range(0,lTmp)]
+    prodsAll = [np.abs(np.vdot(vecs[:,i], psiNext)) for i in range(0,lTmp)]
+    inds = np.argsort(prodsAll)[::-1]#descending
     r=prodsAll[inds[0]]
     psiNext=vecs[:,inds[0]]
-    print(f"r={r}")
+    phase=np.angle(eigVals[inds[0]])
+
+    innerProds.append(r)
     if np.abs(1-r)<eps:
         break
+    tOneRoundEnd=datetime.now()
+    print(f"round {i}, one round time: {tOneRoundEnd-tOneRoundStart}, r = {r}")
 
 tIterEnd=datetime.now()
 
 print(f"one iteration time: {tIterEnd-tIterStart}")
-
+print(f"phase = {phase}")
+plt.figure()
+plt.plot(range(0,len(innerProds)),innerProds,color="black")
+plt.yscale("log")
+plt.savefig("tmp.png")
+plt.close()
+plt.figure()
+outMat=vec2Mat(psiNext)
+im=plt.imshow(outMat,cmap=plt.cm.RdBu,interpolation="bilinear")
+plt.colorbar(im)
+plt.xlabel("$n_{2}$")
+plt.ylabel("$n_{1}$")
+plt.savefig(f"g{g}mat.png")
+plt.close()
