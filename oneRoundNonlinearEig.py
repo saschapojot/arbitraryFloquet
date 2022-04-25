@@ -94,15 +94,41 @@ tInitEnd=datetime.now()
 # U3Sparse=csc_matrix(U3)
 print("init time: ",tInitEnd-tInitStart)
 
-# inLeftFile="./leftLinearJ2"+str(J2Coef)+"N2"+str(N2)+"/leftVecsJ2"+str(J2Coef)+".csv"
+inLeftFile="./leftLinearJ2"+str(J2Coef)+"N2"+str(N2)+"/leftVecsJ2"+str(J2Coef)+".csv"
 # inLeftDtFrm=pd.read_csv(inLeftFile,header=None)
 #
-b=17
-# selectedRow=inLeftDtFrm.loc[inLeftDtFrm.iloc[:,1]==b]
+tableStr=np.loadtxt(inLeftFile,dtype="str",delimiter=",")
+def str2Complex(vecStr):
+    ret=[]
+    for elem in vecStr:
+        ret.append(complex(elem))
+    return ret
+def str2Num(tableStr):
+    nRow, nCol=tableStr.shape
+    tableNum=[]
+    for n in range(nRow):
+        oneRow=[]
+        for j in range(0,3):
+            oneRow.append(float(tableStr[n][j]))
+        vecStr=tableStr[n][3:]
+
+        vecComplex=str2Complex(vecStr)
+
+        oneRow.extend(vecComplex)
+        tableNum.append(oneRow)
+    return tableNum
+
+tableNum=str2Num(tableStr)
+
+selectedRow=tableNum[4]
+
+b=selectedRow[1]
+
+
 k2=2*np.pi*b/N2
 #
-# vecLeftStr=np.array(selectedRow.iloc[0,3:])
-# vecLeft=np.array([complex(elem) for elem in vecLeftStr])
+vecLeft=np.array(selectedRow[3:])
+print(len(vecLeft))
 
 psiInit=np.zeros((N1*N2*2,) ,dtype=complex)
 
@@ -112,7 +138,7 @@ for n1 in range(0,N1):
     for n2 in range(0,N2):
         vecTmp=np.zeros((N1*N2,),dtype=complex)
         vecTmp[n1*N2+n2]=1
-        vecRightTmp=[1,1]
+        vecRightTmp=[vecLeft[2*n1],vecLeft[2*n1+1]]
         psiInit+=1/np.sqrt(N2)*np.exp(1j*k2*n2)*np.kron(vecTmp,vecRightTmp)
 
 psiInit/=np.linalg.norm(psiInit,2)
@@ -229,15 +255,16 @@ lTmp=len(psiAll[0])
 def oneExpToGetUq(q):
     if q>=0 and q<Q:
         vec1Tmp=psiAll[q]
-        U1q=expm(-1j*1/3*dt*(H10Sparse+g*diags(np.abs(vec1Tmp)**2)))
+        U1q=expm(-1j*dt*(H10Sparse+g*diags(np.abs(vec1Tmp)**2)))
         return [q,U1q]
     elif q>=Q and q<2*Q:
         vec2Tmp=psiAll[q]
-        U2q=expm(-1j*1/3*dt*(H20Sparse+g*diags(np.abs(vec2Tmp)**2)))
+        U2q=expm(-1j*dt*(H20Sparse+g*diags(np.abs(vec2Tmp)**2)))
         return [q,U2q]
     elif q>=2*Q and q<3*Q:
         vec3Tmp=psiAll[q]
-        U3q=expm(-1j*1/3*dt*(H30Sparse+g*diags(np.abs(vec3Tmp)**2)))
+
+        U3q=expm(-1j*dt*(H30Sparse+g*diags(np.abs(vec3Tmp)**2)))
         return [q,U3q]
 
 tOneRoundStart=datetime.now()

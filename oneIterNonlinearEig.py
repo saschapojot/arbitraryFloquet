@@ -9,7 +9,7 @@ from scipy.sparse.linalg import expm
 from scipy.sparse import diags
 from multiprocessing import Pool
 import torch
-# this script computes the nonlinear eigenvalue problem
+# this script computes the nonlinear eigenvalue problem for iteration of 1 point
 ############consts
 J1=0.5*np.pi
 
@@ -120,7 +120,7 @@ def str2Num(tableStr):
 
 tableNum=str2Num(tableStr)
 
-selectedRow=tableNum[4]
+selectedRow=tableNum[0]
 
 b=selectedRow[1]
 
@@ -136,8 +136,9 @@ mu=0.5
 for n1 in range(0,N1):
     for n2 in range(0,N2):
         vecTmp=np.zeros((N1*N2,),dtype=complex)
-        vecTmp[n1*N2+n2]=1/np.cosh((n2-N2/2)*mu)
-        vecRightTmp=[vecLeft[2*n1],vecLeft[2*n1+1]]
+        vecTmp[n1*N2+n2]=1
+        # vecRightTmp=[vecLeft[2*n1],vecLeft[2*n1+1]]
+        vecRightTmp=[1,1]
         psiInit+=1/np.sqrt(N2)*np.exp(1j*k2*n2)*np.kron(vecTmp,vecRightTmp)
 
 psiInit/=np.linalg.norm(psiInit,2)
@@ -289,15 +290,15 @@ for i in range(0,maxIt):
     def oneExpToGetUq(q):
         if q >= 0 and q < Q:
             vec1Tmp = psiAll[q]
-            U1q = expm(-1j * 1 / 3 * dt * (H10Sparse + g * diags(np.abs(vec1Tmp) ** 2)))
+            U1q = expm(-1j *  dt * (H10Sparse + g * diags(np.abs(vec1Tmp) ** 2)))
             return [q, U1q]
         elif q >= Q and q < 2 * Q:
             vec2Tmp = psiAll[q]
-            U2q = expm(-1j * 1 / 3 * dt * (H20Sparse + g * diags(np.abs(vec2Tmp) ** 2)))
+            U2q = expm(-1j  * dt * (H20Sparse + g * diags(np.abs(vec2Tmp) ** 2)))
             return [q, U2q]
         elif q >= 2 * Q and q < 3 * Q:
             vec3Tmp = psiAll[q]
-            U3q = expm(-1j * 1 / 3 * dt * (H30Sparse + g * diags(np.abs(vec3Tmp) ** 2)))
+            U3q = expm(-1j  * dt * (H30Sparse + g * diags(np.abs(vec3Tmp) ** 2)))
             return [q, U3q]
 
 
@@ -309,11 +310,11 @@ for i in range(0,maxIt):
     for elem in ret0:
         q=elem[0]
         U=elem[1].toarray()
-        UqTensor[q,:,:]=torch.from_numpy(U)
+        UqTensorCuda[q,:,:]=torch.from_numpy(U)
 
     retUn = torch.eye(lTmp, dtype=torch.cfloat).cuda()
-    for q in range(0,3*Q):
-        UqTensorCuda[q,:,:]=UqTensor[q,:,:]
+    # for q in range(0,3*Q):
+    #     UqTensorCuda[q,:,:]=UqTensor[q,:,:]
 
     for q in range(0,3*Q):
         retUn=UqTensorCuda[q,:,:]@retUn

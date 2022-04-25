@@ -9,6 +9,7 @@ from scipy.sparse.linalg import expm
 from scipy.sparse import diags
 from multiprocessing import Pool
 import torch
+# import mpmath
 # this script computes the nonlinear eigenvalue problem for iteration of 1 point
 # this script does not use gpu
 ############consts
@@ -121,7 +122,8 @@ def str2Num(tableStr):
 
 tableNum=str2Num(tableStr)
 
-selectedRow=tableNum[0]
+rowNum=5
+selectedRow=tableNum[rowNum]
 
 b=selectedRow[1]
 
@@ -137,7 +139,7 @@ mu=0.5
 for n1 in range(0,N1):
     for n2 in range(0,N2):
         vecTmp=np.zeros((N1*N2,),dtype=complex)
-        vecTmp[n1*N2+n2]=1
+        vecTmp[n1*N2+n2]=1*1/np.cosh(mu*(n1-N1/2))*1/np.cosh(mu*(n2-N2/2))
         # vecRightTmp=[vecLeft[2*n1],vecLeft[2*n1+1]]
         vecRightTmp=[1,1]
         psiInit+=1/np.sqrt(N2)*np.exp(1j*k2*n2)*np.kron(vecTmp,vecRightTmp)
@@ -234,52 +236,22 @@ def generateWavefunctions(initVec):
         ret.append(psiNext)
     return ret
 
-# def generateUn(vecsAll):
-#     lengthTmp=len(vecsAll[0])
-#     retUn=identity(lengthTmp,dtype=complex)
-#     for q in range(0,Q):
-#         vecTmp=vecsAll[q]
-#         U1q=expm(-1j*1/3*dt*(H10Sparse+g*diags(np.abs(vecTmp)**2)))
-#         retUn=U1q@retUn
-#
-#     for q in range(Q,2*Q):
-#         vecTmp=vecsAll[q]
-#         U2q=expm(-1j*1/3*dt*(H20Sparse+g*diags(np.abs(vecTmp)**2)))
-#         retUn=U2q@retUn
-#     for q in range(2*Q,3*Q):
-#         vecTmp=vecsAll[q]
-#         U3q=expm(-1j*1/3*dt*(H30Sparse+g*diags(np.abs(vecTmp)**2)))
-#         retUn=U3q@retUn
-#     return retUn
-# psiAll=generateWavefunctions(psiInit)
-# lTmp=len(psiAll[0])
-# def oneExpToGetUq(q):
-#     if q>=0 and q<Q:
-#         vec1Tmp=psiAll[q]
-#         U1q=expm(-1j*1/3*dt*(H10Sparse+g*diags(np.abs(vec1Tmp)**2)))
-#         return [q,U1q]
-#     elif q>=Q and q<2*Q:
-#         vec2Tmp=psiAll[q]
-#         U2q=expm(-1j*1/3*dt*(H20Sparse+g*diags(np.abs(vec2Tmp)**2)))
-#         return [q,U2q]
-#     elif q>=2*Q and q<3*Q:
-#         vec3Tmp=psiAll[q]
-#         U3q=expm(-1j*1/3*dt*(H30Sparse+g*diags(np.abs(vec3Tmp)**2)))
-#         return [q,U3q]
+
 initMat=vec2Mat(psiInit)
 im=plt.imshow(initMat,cmap=plt.cm.RdBu,interpolation="bilinear")
 plt.colorbar(im)
 plt.xlabel("$n_{2}$")
 plt.ylabel("$n_{1}$")
-plt.savefig("initmat.png")
+# plt.title("$k_{2}=2\pi$"+str(b)+"/"+str(N2))
+plt.savefig(f"initmat.png")
 plt.close()
 lTmp=len(psiInit)
 UqTensor=torch.zeros((3*Q,lTmp,lTmp),dtype=torch.cfloat)
 # UqTensorCuda = UqTensor.cuda()
-psiNext=psiInit
+psiNext=psiInit[:]
 ##############begin iteration
 eps=1e-5
-maxIt=50
+maxIt=40
 innerProds=[]
 tIterStart=datetime.now()
 for i in range(0,maxIt):
@@ -291,15 +263,15 @@ for i in range(0,maxIt):
     def oneExpToGetUq(q):
         if q >= 0 and q < Q:
             vec1Tmp = psiAll[q]
-            U1q = expm(-1j * 1 / 3 * dt * (H10Sparse + g * diags(np.abs(vec1Tmp) ** 2)))
+            U1q = expm(-1j * dt * (H10Sparse + g * diags(np.abs(vec1Tmp) ** 2)))
             return [q, U1q]
         elif q >= Q and q < 2 * Q:
             vec2Tmp = psiAll[q]
-            U2q = expm(-1j * 1 / 3 * dt * (H20Sparse + g * diags(np.abs(vec2Tmp) ** 2)))
+            U2q = expm(-1j  * dt * (H20Sparse + g * diags(np.abs(vec2Tmp) ** 2)))
             return [q, U2q]
         elif q >= 2 * Q and q < 3 * Q:
             vec3Tmp = psiAll[q]
-            U3q = expm(-1j * 1 / 3 * dt * (H30Sparse + g * diags(np.abs(vec3Tmp) ** 2)))
+            U3q = expm(-1j  * dt * (H30Sparse + g * diags(np.abs(vec3Tmp) ** 2)))
             return [q, U3q]
 
 
@@ -354,5 +326,8 @@ im=plt.imshow(outMat,cmap=plt.cm.RdBu,interpolation="bilinear")
 plt.colorbar(im)
 plt.xlabel("$n_{2}$")
 plt.ylabel("$n_{1}$")
-plt.savefig(f"g{g}mat.png")
+# plt.title("$k_{2}=2\pi$"+str(b)+"/"+str(N2))
+plt.savefig(f"g{g}sechmat.png")
 plt.close()
+
+np.savetxt("eigwvfunction.csv",[psiNext],delimiter=",")
