@@ -32,6 +32,7 @@ def F3(ab):
     return [a,b,expm(-1j*J3*(M+np.cos(ka)+np.cos(kb))*sigma3)]
 
 def F2(bJ2Ind):
+
     b,J2Ind=bJ2Ind
     J2=J2ValsAll[J2Ind]
     kb=b*dk
@@ -57,6 +58,7 @@ F1InData=[a for a in range(0,N)]
 threaNum=24
 tFStart=datetime.now()
 pool0=Pool(threaNum)
+
 ret3=pool0.map(F3,F3InData)
 
 
@@ -64,6 +66,7 @@ pool1=Pool(threaNum)
 ret2=pool1.map(F2,F2InData)
 
 pool2=Pool(threaNum)
+
 ret1=pool2.map(F1,F1InData)
 
 
@@ -71,6 +74,15 @@ tFEnd=datetime.now()
 print("F time : ",tFEnd-tFStart)
 
 #populate F3Tensor
+tProdStart=datetime.now()
+lTmp=len(psiAll[0])
+retUn=identity(lTmp,dtype=complex)
+for elem in sortedRet0:
+    UTmp=elem[1]
+    retUn=UTmp@retUn
+
+tProdEnd=datetime.now()
+print(f"prod time: {tProdEnd-tProdStart}")
 for itemTmp in ret3:
     a,b,UTmp=itemTmp
     F3Tensor[a,b,:,:]=UTmp
