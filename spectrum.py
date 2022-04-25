@@ -74,15 +74,7 @@ tFEnd=datetime.now()
 print("F time : ",tFEnd-tFStart)
 
 #populate F3Tensor
-tProdStart=datetime.now()
-lTmp=len(psiAll[0])
-retUn=identity(lTmp,dtype=complex)
-for elem in sortedRet0:
-    UTmp=elem[1]
-    retUn=UTmp@retUn
 
-tProdEnd=datetime.now()
-print(f"prod time: {tProdEnd-tProdStart}")
 for itemTmp in ret3:
     a,b,UTmp=itemTmp
     F3Tensor[a,b,:,:]=UTmp
