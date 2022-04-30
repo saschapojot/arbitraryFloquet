@@ -1,0 +1,325 @@
+import matplotlib.pyplot as plt
+from datetime import datetime
+import numpy as np
+# from scipy.linalg import  expm
+from scipy.sparse import csc_matrix
+# import pandas as pd
+# from scipy.sparse import identity
+from scipy.sparse.linalg import expm
+from scipy.sparse import diags
+from multiprocessing import Pool
+import torch
+# import mpmath
+# this script computes the nonlinear eigenvalue problem for iteration of 1 point
+# this script does not use gpu
+############consts
+J1=0.5*np.pi
+
+J3=0.2*np.pi
+J2Coef=0.5
+J2=J2Coef*np.pi
+
+M=1
+# print(torch.cuda.is_available())
+sigma3 = np.array([[1, 0], [0, -1]],dtype=complex)
+sigma2 = np.array([[0, -1j], [1j, 0]],dtype=complex)
+sigma1 = np.array([[0, 1], [1, 0]],dtype=complex)
+
+N1 = 30
+N2 =  30
+Q=60
+dt=1/(3*Q)
+g=5
+tInitStart=datetime.now()
+#spatial part of H10
+S10=np.zeros((N1*N2,N1*N2),dtype=complex)
+
+for nx in range(0,N1-1):
+    for ny in range(0,N2):
+        S10[nx*N2+ny,nx*N2+N2+ny]=1
+        S10[nx*N2+N2+ny,nx*N2+ny]=-1
+
+H10=3*J1/(2*1j)*np.kron(S10,sigma1)
+# rowN,colN=H10.shape
+# print(np.count_nonzero(H10)/(rowN*colN))
+H10Sparse=csc_matrix(H10)
+U1Sparse=expm(-1j*dt*H10Sparse)
+
+#spatial part of H20
+S20=np.zeros((N1*N2,N1*N2),dtype=complex)
+for nx in range(0,N1):
+    for ny in range(0,N2):
+        S20[nx*N2+ny,nx*N2+(ny+1)%N2]=1
+        S20[nx*N2+(ny+1)%N2,nx*N2+ny]=-1
+
+H20=3*J2/(2*1j)*np.kron(S20,sigma2)
+# rowN,colN=H20.shape
+# print(np.count_nonzero(H20)/(rowN*colN))
+H20Sparse=csc_matrix(H20)
+U2Sparse=expm(-1j*dt*H20Sparse)
+
+#spatial part of H30
+#part 0
+S300=np.zeros((N1*N2,N1*N2),dtype=complex)
+for nx in range(0,N1):
+    for ny in range(0,N2):
+        S300[nx*N2+ny,nx*N2+ny]=1
+S300*=3*J3*M
+#part 1initialize sparse matrix from numpy
+S301=np.zeros((N1*N2,N1*N2),dtype=complex)
+for nx in range(0,N1-1):
+    for ny in range(0,N2):
+        S301[nx*N2+ny,nx*N2+N2+ny]=1
+        S301[nx*N2+N2+ny,nx*N2+ny]=1
+S301*=3*J3/2
+
+#part 2
+S302=np.zeros((N1*N2,N1*N2),dtype=complex)
+for nx in range(0,N1):
+    for ny in range(0,N2):
+        S302[nx*N2+ny,nx*N2+(ny+1)%N2]=1
+        S302[nx*N2+(ny+1)%N2,nx*N2+ny]=1
+
+S302*=3*J3/2
+#assemble spatial part of H30
+S30=S300+S301+S302
+H30=np.kron(S30,sigma3)
+# rowN,colN=H30.shape
+# print(np.count_nonzero(H30)/(rowN*colN))
+H30Sparse=csc_matrix(H30)
+U3Sparse=expm(-1j*dt*H30Sparse)
+# print(U3Sparse)
+tInitEnd=datetime.now()
+
+# U1Sparse=csc_matrix(U1)
+# U2Sparse=csc_matrix(U2)
+# U3Sparse=csc_matrix(U3)
+print("init time: ",tInitEnd-tInitStart)
+
+
+
+def str2Complex(vecStr):
+    ret=[]
+    for elem in vecStr:
+        ret.append(complex(elem))
+    return ret
+def str2Num(tableStr):
+    nRow, nCol=tableStr.shape
+    tableNum=[]
+    for n in range(nRow):
+        oneRow=[]
+        for j in range(0,3):
+            oneRow.append(float(tableStr[n][j]))
+        vecStr=tableStr[n][3:]
+
+        vecComplex=str2Complex(vecStr)
+
+        oneRow.extend(vecComplex)
+        tableNum.append(oneRow)
+    return tableNum
+
+
+
+psiInit=np.zeros((N1*N2*2,) ,dtype=complex)
+
+mu=0.5
+
+for n1 in range(0,N1):
+    if n1>0: continue
+    for n2 in range(0,N2):
+        vecTmp=np.zeros((N1*N2,),dtype=complex)
+        vecTmp[n1*N2+n2]=1
+
+        vecRightTmp=np.array([1,1])/np.cosh(mu*(n2-N2/2))
+        psiInit+=np.kron(vecTmp,vecRightTmp)
+
+psiInit/=np.linalg.norm(psiInit,2)
+
+
+def vec2Mat(vec):
+    """
+
+    :param vec: length=2*N1*N2
+    :return: matrix representation of wavefunction
+    """
+    mat=np.zeros((N1,N2),dtype=float)
+    for j in range(0,int(len(vec)/2)):
+        n2=j%N2
+        n1=int((j-n2)/N2)
+        mat[n1,n2]=np.abs(vec[2*j])**2+np.abs(vec[2*j+1])**2
+    return mat
+
+
+def oneStepNonlinear(vec):
+    """
+
+    :param vec:
+    :return: 1/2dt nonlinear evolution
+    """
+    rst=[np.exp(-1j*1/2*g*dt*np.abs(elem)**2)*elem for elem in vec]
+    return rst
+
+def oneStep1(vec):
+    """
+
+    :param vec:
+    :return: one step evolution for the 1st 1/3 time
+    """
+    #1/2dt nonlinear evolution
+    tmp1=oneStepNonlinear(vec)
+    #dt linear evolution
+    tmp2=U1Sparse.dot(tmp1)
+    #1/2dt nonlinear evolution
+    tmp3=oneStepNonlinear(tmp2)
+    return tmp3
+
+def oneStep2(vec):
+    """
+
+    :param vec:
+    :return: one step evolution for the 2nd 1/3 time
+    """
+    #1/2 dt nonlinear evolution
+    tmp1=oneStepNonlinear(vec)
+    #dt linear evolution
+    tmp2=U2Sparse.dot(tmp1)
+    #1/2 dt nonlinear evolution
+    tmp3=oneStepNonlinear(tmp2)
+    return tmp3
+
+def oneStep3(vec):
+    """
+
+    :param vec:
+    :return: one step evolution for the 3nd 1/3 time
+    """
+
+    #1/2 dt nonlinear evolution
+    tmp1=oneStepNonlinear(vec)
+    #dt linear evolution
+    tmp2=U3Sparse.dot(tmp1)
+    #1/2dt nonlinear evolution
+    tmp3=oneStepNonlinear(tmp2)
+    return tmp3
+
+
+def generateWavefunctions(initVec):
+    """
+
+    :param initVec:
+    :return: wavefunctions at each time step
+    """
+
+    ret=[initVec]
+    for q in range(0,Q):
+        psiCurr=ret[-1]
+        psiNext=oneStep1(psiCurr)
+        ret.append(psiNext)
+    for q in range(0,Q):
+        psiCurr=ret[-1]
+        psiNext=oneStep2(psiCurr)
+        ret.append(psiNext)
+    for q in range(0,Q):
+        psiCurr=ret[-1]
+        psiNext=oneStep3(psiCurr)
+        ret.append(psiNext)
+    return ret
+
+
+initMat=vec2Mat(psiInit)
+im=plt.imshow(initMat,cmap=plt.cm.RdBu,interpolation="bilinear")
+plt.colorbar(im)
+plt.xlabel("$n_{2}$")
+plt.ylabel("$n_{1}$")
+
+plt.title("init:  $g=$"+str(g))
+plt.savefig("initmat.png")
+plt.close()
+lTmp=len(psiInit)
+UqTensor=torch.zeros((3*Q,lTmp,lTmp),dtype=torch.cfloat)
+# UqTensorCuda = UqTensor.cuda()
+psiNext=psiInit[:]
+##############begin iteration
+eps=1e-5
+maxIt=20
+innerProds=[]
+tIterStart=datetime.now()
+for i in range(0,maxIt):
+    tOneRoundStart=datetime.now()
+    psiAll = generateWavefunctions(psiNext)
+
+
+
+    def oneExpToGetUq(q):
+        if q >= 0 and q < Q:
+            vec1Tmp = psiAll[q]
+            U1q = expm(-1j * dt * (H10Sparse + g * diags(np.abs(vec1Tmp) ** 2)))
+            return [q, U1q]
+        elif q >= Q and q < 2 * Q:
+            vec2Tmp = psiAll[q]
+            U2q = expm(-1j  * dt * (H20Sparse + g * diags(np.abs(vec2Tmp) ** 2)))
+            return [q, U2q]
+        elif q >= 2 * Q and q < 3 * Q:
+            vec3Tmp = psiAll[q]
+            U3q = expm(-1j  * dt * (H30Sparse + g * diags(np.abs(vec3Tmp) ** 2)))
+            return [q, U3q]
+
+
+    threaNum=48
+    pool0=Pool(threaNum)
+    qList=range(0,3*Q)
+    ret0=pool0.map(oneExpToGetUq,qList)
+
+    for elem in ret0:
+        q=elem[0]
+        U=elem[1].toarray()
+        # UqTensorCuda[q,:,:]=torch.from_numpy(U)
+        UqTensor[q,:,:]=torch.from_numpy(U)
+    retUn = torch.eye(lTmp, dtype=torch.cfloat)
+    # retUn = torch.eye(lTmp, dtype=torch.cfloat).cuda()
+    # for q in range(0,3*Q):
+    #     UqTensorCuda[q,:,:]=UqTensor[q,:,:]
+
+    for q in range(0,3*Q):
+        retUn=UqTensor[q,:,:]@retUn
+
+    # UNP=retUn.detach().numpy()
+    # eigVals, vecs = np.linalg.eig(UNP)
+    # vecsArray=[vecs[:,i] for i in range(0,lTmp)]
+    eigVals,vecs=torch.linalg.eig(retUn)
+    eigVals=eigVals.detach().numpy()
+    vecs=vecs.detach().numpy()
+    prodsAll = [np.abs(np.vdot(vecs[:,i], psiNext)) for i in range(0,lTmp)]
+    inds = np.argsort(prodsAll)[::-1]#descending
+    r=prodsAll[inds[0]]
+    psiNext=vecs[:,inds[0]]
+    phase=np.angle(eigVals[inds[0]])
+
+    innerProds.append(r)
+    tOneRoundEnd = datetime.now()
+    print(f"round {i}, one round time: {tOneRoundEnd - tOneRoundStart}, r = {r}")
+    if np.abs(1-innerProds[-1])<eps and np.abs(1-innerProds[-2])<eps and np.abs(1-innerProds[-3])<eps:
+        break
+
+
+
+tIterEnd=datetime.now()
+
+print(f"one iteration time: {tIterEnd-tIterStart}")
+print(f"phase = {float(phase)}")
+plt.figure()
+plt.plot(range(0,len(innerProds)),innerProds,color="black")
+plt.yscale("log")
+plt.savefig("convergence.png")
+plt.close()
+plt.figure()
+outMat=vec2Mat(psiNext)
+im=plt.imshow(outMat,cmap=plt.cm.RdBu,interpolation="bilinear")
+plt.colorbar(im)
+plt.xlabel("$n_{2}$")
+plt.ylabel("$n_{1}$")
+plt.title("eig: $g=$"+str(g))
+plt.savefig(f"g{g}mat.png")
+plt.close()
+
+np.savetxt("eigwvfunction.csv",[psiNext],delimiter=",")
