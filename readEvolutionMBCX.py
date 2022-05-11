@@ -6,6 +6,7 @@ from pathlib import Path
 from scipy.sparse import csc_matrix
 
 import pandas as pd
+#this script verifies validity of nonlinear eigenvalue solution
 ############consts
 J1=0.5*np.pi
 
@@ -23,7 +24,7 @@ N1 = 30
 N2 =  30
 Q=60
 dt=1/(3*Q)
-g=1
+g=10
 
 tInitStart=datetime.now()
 #spatial part of H10
@@ -93,8 +94,8 @@ U3Sparse=csc_matrix(U3)
 
 tInitEnd=datetime.now()
 print("init time: ",tInitEnd-tInitStart)
-
-inFile="./nonlinEigPlots/center/eigwvfunctionCenter.csv"
+inDir="./leftNonlinJ20.5N230/g10nonlinEIgPlots/g10J20.5N230Left/b14/"
+inFile=inDir+"eigwvfunction.csv"
 inDtFrm=pd.read_csv(inFile,header=None)
 psiInitStr=np.array(inDtFrm.iloc[0,:])
 def str2complexVec(vecStr):
@@ -207,7 +208,7 @@ tEvolveEnd=datetime.now()
 
 print(str(periodNum)+" period evolution time: ",tEvolveEnd-tEvolveStart)
 
-outFigsDir="./nonlinEigPlots/center/evoFigs/"
+outFigsDir=inDir+"evo/"
 Path(outFigsDir).mkdir(parents=True,exist_ok=True)
 tPltStart=datetime.now()
 for j in range(0,len(dataAll)):
