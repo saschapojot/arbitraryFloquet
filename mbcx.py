@@ -5,18 +5,18 @@ from scipy.sparse.linalg import expm
 import matplotlib.pyplot as plt
 from multiprocessing import Pool
 # from scipy.linalg import expm
-
+#this script computes spectrum along n2, with MBCX
 
 J1 = 0.5 * np.pi
 J3 = 0.2 * np.pi
-J2 = 6 * np.pi
+J2 = 1.5 * np.pi
 M = 1
 sigma3 = np.array([[1, 0], [0, -1]])
 sigma2 = np.array([[0, -1j], [1j, 0]])
 sigma1 = np.array([[0, 1], [1, 0]])
 
-N1 = 200
-N2 = 200
+N1 = 100
+N2 = 100
 dk = 2 * np.pi / N2
 
 # spatial part of H1
