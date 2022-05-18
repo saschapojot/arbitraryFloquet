@@ -75,7 +75,7 @@ def UMat(j):
 
 EValsAll=[0.065*np.pi,0.935*np.pi]
 
-pSp=np.zeros((Nx*Ny,Nx*Ny),dtype=complex)
+pSp=np.zeros((2*Ny,Nx*Ny),dtype=complex)
 for n in range(0,Ny):
     pSp[n,n]=1
 for n in range(1,Ny+1):
