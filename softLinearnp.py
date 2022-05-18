@@ -1,15 +1,15 @@
 import numpy as np
 from datetime import datetime
 from scipy.sparse import csc_matrix
-import mpmath
-from mpmath import mp
-mp.dpd=20
-# from scipy.sparse.linalg import expm
-from scipy.linalg import expm
+# import mpmath
+# from mpmath import mp
+# mp.dpd=20
+from scipy.sparse.linalg import expm
+# from scipy.linalg import expm
 import matplotlib.pyplot as plt
 from multiprocessing import Pool
 from pathlib import Path
-#this script computes spectrum along n2 with soft boundary along x, and MBCX
+#this script computes spectrum along n2 with soft boundary along x, and MBCX, using np
 
 J1=0.5*np.pi
 J3=0.2*np.pi
@@ -25,16 +25,48 @@ N1 = 100
 N2 = 100
 dk = 2 * np.pi / N2
 
-mu=0.1
+mu=0.003
+###########################################exp
+# def V(n1):
+#     """
+#
+#     :param n1: 0,1,...,N1-1
+#     :return: soft boundary potential, exp
+#     """
+#     # mu=0.0125
+#     return np.exp(mu*np.abs(n1-N1/2))
+#############################################
+
+############################################half exp
+# def V(n1):
+#     """
+#
+#     :param n1: 0,1,...,N1-1
+#     :return: soft boundary potential, exp
+#     """
+#     # mu=0.0125
+#     return np.exp(mu*(n1-N1/2))
+############################################
+
+############################################linear slope
+leftStartingPoint=2
+rightStartingPoint=N1-3
+leftSlope=1e0
+rightSlope=0
 def V(n1):
     """
 
     :param n1: 0,1,...,N1-1
-    :return: soft boundary
+    :return: soft boundary potential, linear
     """
-    # mu=0.0125
-    return mpmath.exp(mu*np.abs(n1-N1/2))
+    if n1<=leftStartingPoint:
+        return leftSlope*np.abs(n1-leftStartingPoint)
+    elif n1>leftStartingPoint and n1<rightStartingPoint:
+        return 0
+    else:
+        return rightSlope*np.abs(n1-rightStartingPoint)
 
+############################################
 #V values on each n1
 diagV=[V(n1) for n1 in range(0,N1)]
 #assemble H10
@@ -64,8 +96,8 @@ def count0(mat):
 
 
 
-# H1Sparse=csc_matrix(H10)
-U1Mat=expm(-1j*1/3*H10)
+H10Sparse=csc_matrix(H10)
+U1Mat=expm(-1j*1/3*H10Sparse)
 
 
 # U1MatDense=U1Mat.toarray()
@@ -77,8 +109,8 @@ def U2(b):
     k2=b*dk
     S2=np.eye(N2,dtype=complex)
     H20 = 3 * J2 * np.sin(k2) * np.kron(S2, sigma2)+np.kron(np.diag(diagV),sigma0)
-    # H2Sparse=csc_matrix(H2)
-    return expm(-1j*1/3*H20)
+    H20Sparse=csc_matrix(H20)
+    return expm(-1j*1/3*H20Sparse)
 
 #
 # print(count0(U2(10).toarray()))
@@ -93,8 +125,8 @@ def U3(b):
         S3[n1 + 1, n1] = 1
     S3 *= 3 * J3 / 2
     H30 = np.kron(S3, sigma3)+np.kron(np.diag(diagV),sigma0)
-    # H3Sparse=csc_matrix(H3)
-    return expm(-1j*1/3*H30)
+    H30Sparse=csc_matrix(H30)
+    return expm(-1j*1/3*H30Sparse)
 
 
 # print(count0(U3(20).toarray()))
@@ -102,7 +134,7 @@ def U3(b):
 
 
 def U(b):
-    return U3(b)@U2(b)@U1Mat
+    return (U3(b)@U2(b)@U1Mat).toarray()
 
 # print(count0(U(13).toarray()))
 # we can see that U is dense
@@ -212,24 +244,26 @@ sVal=5
 ftSize=5
 fig=plt.figure()
 ax=fig.add_subplot(111)
-plt.scatter(pltLeftk2,pltLeftPhases,color="green",s=sVal,label="upper")
-plt.scatter(pltRightk2,pltRightPhases,color="red",s=sVal,label="down")
+plt.scatter(pltLeftk2,pltLeftPhases,color="green",s=sVal*2,label="upper",alpha=0.4)
+plt.scatter(pltRightk2,pltRightPhases,color="red",s=sVal*2,label="lower",alpha=0.4)
 plt.scatter(pltMiddlek2,pltMiddlePhases,color="black",s=sVal,label="bulk",alpha=0.2)
 plt.legend()
 lgnd =ax.legend(loc='upper right',fontsize=ftSize)
 plt.xlabel("$k_{y}/\pi$")
 plt.ylabel("$\epsilon/\pi$")
-plt.title("$\mu=$"+str(mu)+", $J_{2}/\pi=$"+str(J2/np.pi))
-
+# plt.title("$\mu=$"+str(mu)+", $J_{2}/\pi=$"+str(J2Coef))
+leftSc="{:.2e}".format(leftSlope)
+rightSc="{:.2e}".format(rightSlope)
+plt.title("upper slope="+leftSc+", lower slope="+rightSc+", $J_{2}/\pi=$"+str(J2Coef))
 # plt.hlines(y=-1,xmin=0,xmax=2,linewidth=0.5,color="blue",linestyles="--")
 #
 # plt.hlines(y=0,xmin=0,xmax=2,linewidth=0.5,color="blue",linestyles="--")
 #
 # plt.hlines(y=1,xmin=0,xmax=2,linewidth=0.5,color="blue",linestyles="--")
 
-outDir="./soft/exp/J2"+str(J2Coef)+"/"
+outDir="./soft/lin/J2"+str(J2Coef)+"/"
 Path(outDir).mkdir(parents=True,exist_ok=True)
-plt.savefig(outDir+"mu"+str(mu)+"J2"+str(J2Coef)+"SoftExpMbcx.png")
-
+# plt.savefig(outDir+"mu"+str(mu)+"J2"+str(J2Coef)+"SoftExpMbcx.png")
+plt.savefig(outDir+"leftSlope"+str(leftSlope)+"rightSlope"+str(rightSlope)+"J2"+str(J2Coef)+"soft.png")
 tPltEnd=datetime.now()
 print("plt time: ",tPltEnd-tPltStart)
