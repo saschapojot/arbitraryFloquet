@@ -19,8 +19,8 @@ sigma3 = np.array([[1, 0], [0, -1]],dtype=complex)
 sigma2 = np.array([[0, -1j], [1j, 0]],dtype=complex)
 sigma1 = np.array([[0, 1], [1, 0]],dtype=complex)
 
-N1 = 7
-N2 = 7
+N1 = 70
+N2 = 70
 slopesAll=np.arange(0,1,0.5)
 
 #spatial part of H10
@@ -123,6 +123,108 @@ for n in range(1,N2+1):
     pSp[-n,-n]=1
 
 P=np.kron(pSp,sigma0)
+PT=P.T
+PTP=PT@P
 
-PTP=P.T@P
+PTPtorch=torch.from_numpy(PTP)
+Ptorch=torch.from_numpy(P)
+PTtorch=torch.from_numpy(PT)
 
+
+tUStart=datetime.now()
+procNum=48
+pool0=Pool(procNum)
+jUAll=pool0.map(U,range(0,len(slopesAll)))
+tUEnd=datetime.now()
+print("U time: ",tUEnd-tUStart)
+
+EIndjUAll=[]
+for EInd in range(0,len(EValsAll)):
+    for itemTmp in jUAll:
+        newItem=[EInd]+itemTmp
+        EIndjUAll.append(newItem)
+
+def toBeInversed(EIndjU):
+    """
+
+    :param EIndjU: [EInd, j, U]
+    :return: 1-e^{iE}U(1-PTP)
+    """
+
+    EInd, j, UMat=EIndjU
+
+    Utensor=torch.from_numpy(UMat)
+
+    identityMat=torch.eye(2*N1*N2,dtype=torch.cfloat)
+    ETmp=EValsAll[EInd]
+
+    rst=identityMat-np.exp(1j*ETmp)*Utensor@(identityMat-PTPtorch)
+
+    return [EInd, j, rst]
+
+tInvStart=datetime.now()
+procNum=48
+
+pool1=Pool(procNum)
+
+outDataAll=pool1.map(toBeInversed,EIndjUAll)
+
+tensorToBeInvsered=torch.zeros((len(EValsAll),len(slopesAll),2*N1*N2,2*N1*N2),dtype=torch.cfloat)
+
+for itemTmp in outDataAll:
+    EInd,j,matTmp=itemTmp
+    tensorToBeInvsered[EInd,j,:,:]=matTmp
+
+inversed=np.linalg.inv(tensorToBeInvsered)
+
+tInvEnd=datetime.now()
+
+print("inv time: ",tInvEnd-tInvStart)
+
+tProdStart=datetime.now()
+pRow,pCol=P.shape
+leftP=torch.zeros((len(EValsAll),len(slopesAll),pRow,pCol),dtype=torch.cfloat)
+
+pTRow, pTCol=PT.shape
+rightEUPT=torch.zeros((len(EValsAll),len(slopesAll),2*N1*N2,pTCol),dtype=torch.cfloat)
+
+for EInd in range(0,len(EValsAll)):
+    for j in range(0,len(slopesAll)):
+        leftP[EInd,j,:,:]=Ptorch
+
+for itemTmp in jUAll:
+    j,UMat=itemTmp
+    UTensor=torch.from_numpy(UMat)
+    for EInd in range(0,len(EValsAll)):
+        ETmp=EValsAll[EInd]
+        rightEUPT[EInd,j,:,:]=np.exp(1j*ETmp)*UTensor@PTtorch
+
+STensor=leftP@inversed@rightEUPT
+
+
+
+
+
+tTensor=torch.zeros((len(EValsAll),len(slopesAll),2*N2,2*N2),dtype=torch.cfloat)
+
+tDaggerTensor=torch.zeros((len(EValsAll),len(slopesAll),2*N2,2*N2),dtype=torch.cfloat)
+
+for EInd in range(0,len(EValsAll)):
+    for j in range(0,len(slopesAll)):
+        tTmp=STensor[EInd,j,0:(2*N2),(-2*N2):]
+        tTensor[EInd,j,:,:]=tTmp
+        tDaggerTensor[EInd,j,:,:]=torch.transpose(torch.conj(tTmp),0,1)
+
+tProd=tDaggerTensor@tTensor
+
+tProdEnd=datetime.now()
+
+print("prod time: ",tProdEnd-tProdStart)
+
+G=np.zeros((len(EValsAll),len(slopesAll)))
+
+for EInd in range(0,len(EValsAll)):
+    for j in range(0,len(slopesAll)):
+        G[EInd,j]=torch.trace(tProd[EInd,j,:,:])
+
+print(G)
