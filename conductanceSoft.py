@@ -1,10 +1,11 @@
 import numpy as np
 from datetime import datetime
-from scipy.sparse import csc_matrix
-from scipy.sparse.linalg import expm
+
 import matplotlib.pyplot as plt
 from multiprocessing import Pool
 import torch
+
+#this script calculates conductance with soft edge
 
 J1=0.5*np.pi
 J3=0.2*np.pi
@@ -19,9 +20,11 @@ sigma3 = np.array([[1, 0], [0, -1]],dtype=complex)
 sigma2 = np.array([[0, -1j], [1j, 0]],dtype=complex)
 sigma1 = np.array([[0, 1], [1, 0]],dtype=complex)
 
-N1 = 70
-N2 = 70
+
+N1 = 7
+N2 = 7
 slopesAll=np.arange(0,1,0.5)
+
 
 #spatial part of H10
 S1=np.zeros((N1*N2,N1*N2),dtype=complex)
@@ -31,7 +34,6 @@ for ny in range(0,N2):
         S1[(nx+1)*N2+ny,nx*N2+ny]=-1
 
 H10Sharp=np.kron(3*J1/(2*1j)*S1,sigma1)
-H10SharpSparse=csc_matrix(H10Sharp)
 
 
 #spatial part of H20
@@ -41,8 +43,9 @@ for nx in range(0,N1):
         S2[nx*N2+ny,nx*N2+ny+1]=1
         S2[nx*N2+ny+1,nx*N2+ny]=-1
 
+
 H20Sharp=np.kron(3*J2/(2*1j)*S2,sigma2)
-H20SharpSparse=csc_matrix(H20Sharp)
+
 
 #spatial part of H30
 S3=np.zeros((N1*N2,N1*N2),dtype=complex)
@@ -63,20 +66,28 @@ for nx in range(0,N1):
         S3[nx*N2+ny+1,nx*N2+ny]=1
 
 H30Sharp=np.kron(3*J3/2*S3,sigma3)
-H30SharpSparse=csc_matrix(H30Sharp)
+
 leftStartingPoint=2
 rightStartingPoint=N1-3
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# print("device is "+str(device))
+H1Tensor=torch.zeros((len(slopesAll),2*N1*N2,2*N1*N2),dtype=torch.cfloat)
+H2Tensor=torch.zeros((len(slopesAll),2*N1*N2,2*N1*N2),dtype=torch.cfloat)
+H3Tensor=torch.zeros((len(slopesAll),2*N1*N2,2*N1*N2),dtype=torch.cfloat)
 
 
-def U(j):
+
+def H1H2H3(j):
     """
 
     :param j: index of slopes
-    :return: [j,U]
+    :return: [j, -1/3i*H1, -1/3i*H2, -1/3i*H3]
     """
-    slope=slopesAll[j]
+
+    slope = slopesAll[j]
     leftSlope = slope
     rightSlope = slope
+
 
     def V(n1):
         """
@@ -94,26 +105,17 @@ def U(j):
     # V values on each n1
     diagV = [V(n1) for n1 in range(0, N1)]
 
+    S4 = np.zeros((N1 * N2, N1 * N2), dtype=complex)
+    for n1 in range(0, N1):
+        for n2 in range(0, N2):
+            S4[n1 * N2 + n2, n1 * N2 + n2] = diagV[n1]
+    H40Soft = np.kron(S4, sigma0)
 
-    S4=np.zeros((N1*N2,N1*N2),dtype=complex)
-    for n1 in range(0,N1):
-        for n2 in range(0,N2):
-            S4[n1*N2+n2,n1*N2+n2]=diagV[n1]
-    H40Soft=np.kron(S4,sigma0)
-    H40SoftSparse=csc_matrix(H40Soft)
+    H10Tot=H10Sharp+H40Soft
+    H20Tot=H20Sharp+H40Soft
+    H30Tot=H30Sharp+H40Soft
 
-    H10TotSparse=H10SharpSparse+H40SoftSparse
-    H20TotSparse=H20SharpSparse+H40SoftSparse
-    H30TotSparse=H30SharpSparse+H40SoftSparse
-
-    U1Sparse=expm(-1j*1/3*H10TotSparse)
-    U2Sparse=expm(-1j*1/3*H20TotSparse)
-    U3Sparse=expm(-1j*1/3*H30TotSparse)
-
-    UMat=(U3Sparse@U2Sparse@U1Sparse).toarray()
-
-    return [j,UMat]
-
+    return [j,-1/3*1j*H10Tot, -1/3*1j*H20Tot,-1/3*1j*H30Tot]
 
 EValsAll=[0.065*np.pi,0.935*np.pi]
 pSp=np.zeros((2*N2,N1*N2),dtype=complex)
@@ -130,59 +132,88 @@ PTPtorch=torch.from_numpy(PTP)
 Ptorch=torch.from_numpy(P)
 PTtorch=torch.from_numpy(PT)
 
+#cast to cfloat
+PTPtorch=PTPtorch.type(torch.cfloat)
+Ptorch=Ptorch.type(torch.cfloat)
+PTtorch=PTtorch.type(torch.cfloat)
 
-tUStart=datetime.now()
+t3HStart=datetime.now()
 procNum=48
 pool0=Pool(procNum)
-jUAll=pool0.map(U,range(0,len(slopesAll)))
-tUEnd=datetime.now()
-print("U time: ",tUEnd-tUStart)
+jHHH=pool0.map(H1H2H3,range(0,len(slopesAll)))
 
-EIndjUAll=[]
-for EInd in range(0,len(EValsAll)):
-    for itemTmp in jUAll:
-        newItem=[EInd]+itemTmp
-        EIndjUAll.append(newItem)
+t3HEnd=datetime.now()
 
-def toBeInversed(EIndjU):
+print("3H time: ",t3HEnd-t3HStart)
+
+
+tExpStart=datetime.now()
+for itemTmp in jHHH:
+    j,mat1,mat2,mat3=itemTmp
+    H1Tensor[j,:,:]=torch.from_numpy(mat1)
+    H2Tensor[j,:,:]=torch.from_numpy(mat2)
+    H3Tensor[j,:,:]=torch.from_numpy(mat3)
+
+
+U1Tensor=H1Tensor.matrix_exp()
+U2Tensor=H2Tensor.matrix_exp()
+U3Tensor=H3Tensor.matrix_exp()
+
+tExpEnd=datetime.now()
+print("exp time: ",tExpEnd-tExpStart)
+
+tProdStart=datetime.now()
+UTensor=U3Tensor@U2Tensor@U1Tensor
+tProdEnd=datetime.now()
+
+print("prod time: ",tProdEnd-tProdStart)
+identityMat = torch.eye(2 * N1 * N2, dtype=torch.cfloat)
+x=identityMat-PTPtorch
+def oneToBeInversed(EIndj):
     """
 
-    :param EIndjU: [EInd, j, U]
+    :param EIndj: [EInd, j]
     :return: 1-e^{iE}U(1-PTP)
     """
-
-    EInd, j, UMat=EIndjU
-
-    Utensor=torch.from_numpy(UMat)
-
-    identityMat=torch.eye(2*N1*N2,dtype=torch.cfloat)
+    EInd, j=EIndj
     ETmp=EValsAll[EInd]
 
-    rst=identityMat-np.exp(1j*ETmp)*Utensor@(identityMat-PTPtorch)
+    UTmp=UTensor[j,:,:]
+
+
+
+    rst=identityMat-np.exp(1j*ETmp)*UTmp@x
 
     return [EInd, j, rst]
 
-tInvStart=datetime.now()
+
+tInitStart=datetime.now()
 procNum=48
-
 pool1=Pool(procNum)
+EIndjAll=[[EInd,j] for EInd in range(0,2) for j in range(0,len(slopesAll))]
+toBeInversedAll=pool1.map(oneToBeInversed,EIndjAll)
+tensorToBeInversed=torch.zeros((len(EValsAll),len(slopesAll),2*N1*N2,2*N1*N2),dtype=torch.cfloat)
 
-outDataAll=pool1.map(toBeInversed,EIndjUAll)
+for itemTmp in toBeInversedAll:
+    EInd, j,matTmp=itemTmp
+    tensorToBeInversed[EInd,j,:,:]=matTmp
 
-tensorToBeInvsered=torch.zeros((len(EValsAll),len(slopesAll),2*N1*N2,2*N1*N2),dtype=torch.cfloat)
+tInitEnd=datetime.now()
+print("init time: ",tInitEnd-tInitStart)
 
-for itemTmp in outDataAll:
-    EInd,j,matTmp=itemTmp
-    tensorToBeInvsered[EInd,j,:,:]=matTmp
+tInvStart=datetime.now()
+# tensorToBeInversed=tensorToBeInversed.cuda()
 
-inversed=np.linalg.inv(tensorToBeInvsered)
+inversedTensor=torch.linalg.inv(tensorToBeInversed)
 
 tInvEnd=datetime.now()
 
 print("inv time: ",tInvEnd-tInvStart)
 
-tProdStart=datetime.now()
-pRow,pCol=P.shape
+
+tGStart=datetime.now()
+pRow, pCol=P.shape
+
 leftP=torch.zeros((len(EValsAll),len(slopesAll),pRow,pCol),dtype=torch.cfloat)
 
 pTRow, pTCol=PT.shape
@@ -192,18 +223,15 @@ for EInd in range(0,len(EValsAll)):
     for j in range(0,len(slopesAll)):
         leftP[EInd,j,:,:]=Ptorch
 
-for itemTmp in jUAll:
-    j,UMat=itemTmp
-    UTensor=torch.from_numpy(UMat)
+pTRow, pTCol=PT.shape
+rightEUPT=torch.zeros((len(EValsAll),len(slopesAll),2*N1*N2,pTCol),dtype=torch.cfloat)
+
+for j in range(0,len(slopesAll)):
     for EInd in range(0,len(EValsAll)):
         ETmp=EValsAll[EInd]
-        rightEUPT[EInd,j,:,:]=np.exp(1j*ETmp)*UTensor@PTtorch
+        rightEUPT[EInd,j,:,:]=np.exp(1j*ETmp)*UTensor[j,:,:]@PTtorch
 
-STensor=leftP@inversed@rightEUPT
-
-
-
-
+STensor=leftP@inversedTensor@rightEUPT
 
 tTensor=torch.zeros((len(EValsAll),len(slopesAll),2*N2,2*N2),dtype=torch.cfloat)
 
@@ -217,9 +245,7 @@ for EInd in range(0,len(EValsAll)):
 
 tProd=tDaggerTensor@tTensor
 
-tProdEnd=datetime.now()
 
-print("prod time: ",tProdEnd-tProdStart)
 
 G=np.zeros((len(EValsAll),len(slopesAll)))
 
@@ -227,4 +253,9 @@ for EInd in range(0,len(EValsAll)):
     for j in range(0,len(slopesAll)):
         G[EInd,j]=torch.trace(tProd[EInd,j,:,:])
 
+tGEnd=datetime.now()
+
+print("G time: ",tGEnd-tGStart)
+
 print(G)
+
