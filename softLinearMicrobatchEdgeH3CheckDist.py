@@ -54,7 +54,7 @@ length=10
 leftStartingPoint=length
 rightStartingPoint=N1-length-1
 
-slopes=np.arange(0,30.1,0.1)#symmetrical slopes
+slopes=np.arange(0,0.1,0.1)#symmetrical slopes
 
 tTotStart=datetime.now()
 for slVal in slopes:
@@ -211,17 +211,17 @@ for slVal in slopes:
             # pltLeftVecs.append(leftVecsTmp)
             for j in range(0,len(leftPhasesTmp)):
                 pltLeftk2.append(k2)
-                pltLeftPhases.append(leftPhasesTmp[j])
+                pltLeftPhases.append(leftPhasesTmp[j]/np.pi)
                 pltLeftVecs.append(leftVecsTmp[j])
         if len(rightPhasesTmp) > 0:
             for j in range(0,len(rightPhasesTmp)):
                 pltRightk2.append(k2)
-                pltRightPhases.append(rightPhasesTmp[j])
+                pltRightPhases.append(rightPhasesTmp[j]/np.pi)
                 pltRightVecs.append(rightVecsTmp[j])
         if len(middlePhasesTmp) > 0:
             for j in range(0,len(middlePhasesTmp)):
                 pltMiddlek2.append(k2)
-                pltMiddlePhases.append(middlePhasesTmp[j])
+                pltMiddlePhases.append(middlePhasesTmp[j]/np.pi)
                 pltMiddleVecs.append(middleVecsTmp[j])
 
 
